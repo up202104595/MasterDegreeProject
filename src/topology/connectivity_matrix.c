@@ -3,6 +3,8 @@
 #include <string.h>
 #include <time.h>
 #include "tdma_types.h"
+#include <pthread.h>             // <--- Necessário para pthread_mutex_t
+#include "connectivity_matrix.h" // <--- ADICIONE ISTO (para ligar ao seu .
 
 // Global connectivity matrix (simula shared memory)
 static connectivity_matrix_t global_topology;
