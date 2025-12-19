@@ -1,0 +1,2 @@
+node_id,strategy,topology_version,recomputations,link_failures,avg_time_us,min_time_us,max_time_us,last_time_us,dijkstra_time_us,mst_time_us,slot_overhead_pct
+1,1,1,1,1,8.00,8,8,8,0,7,0.03
