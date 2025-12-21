@@ -19,7 +19,7 @@ typedef enum {
     MSG_ROUTING_RESPONSE   // Resposta com next hop
 } message_type_t;
 
-// Header de mensagem UDP
+// Header de mensagem UDP (COM TIMESTAMP!)
 typedef struct __attribute__((packed)) {
     uint8_t version;           // Versão do protocolo
     message_type_t type;       // Tipo de mensagem
@@ -27,6 +27,7 @@ typedef struct __attribute__((packed)) {
     node_id_t dst;            // Nó destino
     uint16_t sequence;        // Número de sequência
     uint16_t payload_len;     // Tamanho do payload
+    uint64_t tx_timestamp_us; // <--- ADICIONA ISTO!
 } udp_header_t;
 
 // Estrutura de transporte UDP
@@ -50,12 +51,13 @@ typedef struct {
 // Inicializa transporte UDP
 int udp_transport_init(udp_transport_t *transport, node_id_t my_id);
 
-// Envia mensagem para um nó específico
+// Envia mensagem para um nó específico (COM TIMESTAMP!)
 int udp_transport_send(udp_transport_t *transport,
                       node_id_t dst_node,
                       message_type_t msg_type,
                       const void *payload,
-                      uint16_t payload_len);
+                      uint16_t payload_len,
+                      uint64_t tx_timestamp_us);  // <--- ADICIONA ISTO!
 
 // Recebe mensagem (blocking ou non-blocking)
 int udp_transport_receive(udp_transport_t *transport,
@@ -64,12 +66,13 @@ int udp_transport_receive(udp_transport_t *transport,
                          uint16_t max_payload_len,
                          bool blocking);
 
-// Broadcast para todos os nós
+// Broadcast para todos os nós (COM TIMESTAMP!)
 int udp_transport_broadcast(udp_transport_t *transport,
                            message_type_t msg_type,
                            const void *payload,
                            uint16_t payload_len,
-                           int num_nodes);
+                           int num_nodes,
+                           uint64_t tx_timestamp_us);  // <--- ADICIONA ISTO!
 
 // Imprime estatísticas
 void udp_transport_print_stats(udp_transport_t *transport);
