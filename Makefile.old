@@ -5,10 +5,9 @@
 # Compiler and Flags
 # ============================================
 CC = gcc
-CFLAGS = -Wall -Wextra -Iinclude -pthread -g -O2
+CFLAGS = -Wall -Wextra -Werror -Iinclude -pthread -g -O2
 LDFLAGS = -pthread -lm
 DEBUG_FLAGS = -DDEBUG -g3 -O0
-STRICT_FLAGS = -Werror
 
 # ============================================
 # Directory Structure
@@ -103,12 +102,6 @@ $(TDMA_NODE): $(ALL_OBJS)
 debug: CFLAGS += $(DEBUG_FLAGS)
 debug: clean all
 	@echo "🐛 Debug build complete"
-
-# Strict build (warnings as errors)
-.PHONY: strict
-strict: CFLAGS += $(STRICT_FLAGS)
-strict: clean all
-	@echo "⚠️  Strict build complete (all warnings are errors)"
 
 # ============================================
 # Unit Tests

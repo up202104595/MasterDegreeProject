@@ -1,0 +1,53 @@
+#!/bin/bash
+# scripts/quick_test.sh - Teste rápido de conectividade
+
+if [ "$EUID" -ne 0 ]; then
+    echo "❌ Error: Please run as root (sudo)"
+    exit 1
+fi
+
+echo "╔════════════════════════════════════════════════╗"
+echo "║  Quick Network Test                            ║"
+echo "╚════════════════════════════════════════════════╝"
+echo ""
+
+# Verifica se namespaces existem
+if ! ip netns list | grep -q "node1"; then
+    echo "❌ Namespaces not found. Run setup first:"
+    echo "   sudo ./scripts/setup_dev_network.sh"
+    exit 1
+fi
+
+echo "✅ Namespaces found"
+echo ""
+
+# Teste de conectividade
+echo "🔍 Testing connectivity..."
+echo ""
+
+for i in 1 2 3 4; do
+    for j in 1 2 3 4; do
+        if [ $i -ne $j ]; then
+            IP="192.168.2.$((10+j))"
+            echo -n "   node$i → node$j ($IP): "
+            
+            if ip netns exec node$i ping -c 1 -W 1 $IP > /dev/null 2>&1; then
+                echo "✅ OK"
+            else
+                echo "❌ FAIL"
+            fi
+        fi
+    done
+done
+
+echo ""
+echo "🔍 Checking ARP tables..."
+echo ""
+
+for i in 1 2 3 4; do
+    echo "Node $i ARP table:"
+    ip netns exec node$i arp -n | grep -v "Address"
+    echo ""
+done
+
+echo "✅ Test complete"
