@@ -36,10 +36,12 @@ NETWORK_SRCS = $(SRC_DIR)/network/udp_transport.c \
 
 SYNC_SRCS = $(SRC_DIR)/sync/ra_tdmas_sync.c
 
+DATA_SRCS = $(SRC_DIR)/data/tx_queue.c
+
 MAIN_SRC = $(SRC_DIR)/main.c
 
 # All source files
-ALL_SRCS = $(TOPO_SRCS) $(ROUTING_SRCS) $(NETWORK_SRCS) $(SYNC_SRCS) $(MAIN_SRC)
+ALL_SRCS = $(TOPO_SRCS) $(ROUTING_SRCS) $(NETWORK_SRCS) $(SYNC_SRCS) $(DATA_SRCS) $(MAIN_SRC)
 
 # ============================================
 # Object Files
@@ -48,9 +50,10 @@ TOPO_OBJS = $(TOPO_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 ROUTING_OBJS = $(ROUTING_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 NETWORK_OBJS = $(NETWORK_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 SYNC_OBJS = $(SYNC_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
+DATA_OBJS = $(DATA_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 MAIN_OBJ = $(MAIN_SRC:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
-ALL_OBJS = $(TOPO_OBJS) $(ROUTING_OBJS) $(NETWORK_OBJS) $(SYNC_OBJS) $(MAIN_OBJ)
+ALL_OBJS = $(TOPO_OBJS) $(ROUTING_OBJS) $(NETWORK_OBJS) $(SYNC_OBJS) $(DATA_OBJS) $(MAIN_OBJ)
 
 # ============================================
 # Test Source Files (if exist)
@@ -83,6 +86,7 @@ directories:
 	@mkdir -p $(BUILD_DIR)/routing
 	@mkdir -p $(BUILD_DIR)/network
 	@mkdir -p $(BUILD_DIR)/sync
+	@mkdir -p $(BUILD_DIR)/data
 	@mkdir -p $(LOG_DIR)
 
 # Compile source files

@@ -10,7 +10,7 @@
 #include <fcntl.h>
 
 void node_id_to_ip(node_id_t node_id, char *ip_str, size_t len) {
-    snprintf(ip_str, len, "192.168.2.%d", 10 + node_id);
+    snprintf(ip_str, len, "192.168.2.%d", node_id);
 }
 
 uint16_t node_id_to_port(node_id_t node_id) {

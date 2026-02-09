@@ -24,24 +24,22 @@ uint64_t current_time_ms() {
 }
 
 // ========================================
-// Network Readiness Check (CORRIGIDO)
+// Network Readiness Check (CORRIGIDO - SEM +10)
 // ========================================
 
 static bool check_network_ready(node_id_t my_id, int total_nodes) {
-    char my_ip[32];  // ← CORRIGIDO: Buffer aumentado de 16 para 32
-    snprintf(my_ip, sizeof(my_ip), "192.168.2.%d", 10 + my_id);
+    char my_ip[32];
+    snprintf(my_ip, sizeof(my_ip), "192.168.2.%d", my_id);  // ✅ SEM +10!
     
-    // Cria socket de teste
     int test_sock = socket(AF_INET, SOCK_DGRAM, 0);
     if (test_sock < 0) {
         return false;
     }
     
-    // Tenta fazer bind no IP específico
     struct sockaddr_in bind_addr;
     memset(&bind_addr, 0, sizeof(bind_addr));
     bind_addr.sin_family = AF_INET;
-    bind_addr.sin_port = 0;  // Porta aleatória
+    bind_addr.sin_port = 0;
     
     if (inet_pton(AF_INET, my_ip, &bind_addr.sin_addr) <= 0) {
         close(test_sock);
@@ -50,15 +48,14 @@ static bool check_network_ready(node_id_t my_id, int total_nodes) {
     
     if (bind(test_sock, (struct sockaddr*)&bind_addr, sizeof(bind_addr)) < 0) {
         close(test_sock);
-        return false;  // Interface ainda não está UP
+        return false;
     }
     
-    // Tenta enviar para qualquer outro nó
     for (int target = 1; target <= total_nodes; target++) {
         if (target == my_id) continue;
         
-        char dst_ip[32];  // ← CORRIGIDO: Buffer aumentado de 16 para 32
-        snprintf(dst_ip, sizeof(dst_ip), "192.168.2.%d", 10 + target);
+        char dst_ip[32];
+        snprintf(dst_ip, sizeof(dst_ip), "192.168.2.%d", target);  // ✅ SEM +10!
         
         struct sockaddr_in dst_addr;
         memset(&dst_addr, 0, sizeof(dst_addr));
@@ -74,20 +71,18 @@ static bool check_network_ready(node_id_t my_id, int total_nodes) {
                             (struct sockaddr*)&dst_addr, sizeof(dst_addr));
         
         if (sent > 0) {
-            // Conseguiu enviar! Rede está OK
             close(test_sock);
             return true;
         }
         
         if (errno != ENETUNREACH && errno != EHOSTUNREACH) {
-            // Outro erro que não seja "network unreachable"
             close(test_sock);
-            return true;  // Assume que a rede está OK
+            return true;
         }
     }
     
     close(test_sock);
-    return false;  // Não conseguiu enviar para nenhum nó
+    return false;
 }
 
 // ========================================
@@ -104,20 +99,17 @@ int tdma_node_init(tdma_node_t *node, node_id_t my_id,
     node->heartbeat_interval_ms = TDMA_ROUND_PERIOD_MS;
     node->running = false;
     
-    uint64_t now = current_time_ms();
+    // ✅ NOVO! Age-based timeout
     for(int i = 0; i < MAX_NODES; i++) {
-        node->last_seen_ms[i] = now;
+        node->node_age[i] = 0;
     }
     
     printf("[NODE %d] Initializing...\n", my_id);
 
-    // ============================================
-    // CRITICAL FIX: Wait for network interface
-    // ============================================
     printf("[NODE %d] Waiting for network interface (veth%d)...\n", my_id, my_id);
     
     bool net_ready = false;
-    for (int attempt = 1; attempt <= 15; attempt++) {  // 15 segundos máximo
+    for (int attempt = 1; attempt <= 15; attempt++) {
         if (check_network_ready(my_id, total_nodes)) {
             net_ready = true;
             printf("[NODE %d] ✅ Network is ready (attempt %d)\n", my_id, attempt);
@@ -136,22 +128,9 @@ int tdma_node_init(tdma_node_t *node, node_id_t my_id,
     }
 
     if (!net_ready) {
-        fprintf(stderr, "\n");
-        fprintf(stderr, "[NODE %d] ❌ FATAL: Network interface failed to initialize!\n", my_id);
-        fprintf(stderr, "[NODE %d] This usually means:\n", my_id);
-        fprintf(stderr, "  1. Network namespace not created correctly\n");
-        fprintf(stderr, "  2. Interface veth%d is not UP\n", my_id);
-        fprintf(stderr, "  3. IP 192.168.2.%d not configured\n", 10 + my_id);
-        fprintf(stderr, "\n");
-        fprintf(stderr, "Debug commands:\n");
-        fprintf(stderr, "  sudo ip netns exec node%d ip addr\n", my_id);
-        fprintf(stderr, "  sudo ip netns exec node%d ip route\n", my_id);
-        fprintf(stderr, "  sudo ip netns exec node%d ping -c 1 192.168.2.1%d\n", 
-                my_id, (my_id % total_nodes) + 1);
-        fprintf(stderr, "\n");
+        fprintf(stderr, "[NODE %d] ❌ FATAL: Network interface failed!\n", my_id);
         return -1;
     }
-    // ============================================
     
     // Init transport
     if (udp_transport_init(&node->transport, my_id) < 0) {
@@ -180,6 +159,9 @@ int tdma_node_init(tdma_node_t *node, node_id_t my_id,
         fprintf(stderr, "[NODE %d] ERROR: Streaming init failed\n", my_id);
         return -1;
     }
+    
+    // ✅ NOVO! Init TX Queue
+    tx_queue_init(&node->tx_queue);
     
     // RA-TDMAs+ Init
     node_id_t all_nodes[MAX_NODES];
@@ -229,19 +211,11 @@ void* tdma_node_heartbeat_thread(void *arg) {
     printf("[NODE %d] Heartbeat thread started\n", node->my_id);
     
     uint64_t last_routing_version = 0;
-    uint64_t last_timeout_check_ms = current_time_ms();  // ← ADICIONAR
     
     while (node->running) {
         
-        // ============================================
-        // CHECK TIMEOUTS PERIODICALLY (NOVO!)
-        // ============================================
-        uint64_t now_ms = current_time_ms();
-        if (now_ms - last_timeout_check_ms >= 1000) {  // A cada 1 segundo
-            tdma_node_check_timeouts(node);
-            last_timeout_check_ms = now_ms;
-        }
-        // ============================================
+        // ✅ NOVO! Age-based timeout check
+        tdma_node_check_timeouts(node);
         
         // Update IP routing when topology changes
         if (node->state == NODE_STATE_RUNNING) {
@@ -280,6 +254,27 @@ void* tdma_node_heartbeat_thread(void *arg) {
             node->packets_sent_in_slot++;
         }
         
+        // ✅ NOVO! Send data from TX queue (with lookahead)
+        while (node->running && !tx_queue_is_empty(&node->tx_queue)) {
+            uint64_t now_us = ra_tdmas_get_current_time_us();
+            uint64_t slot_end_us = now_us + ra_tdmas_time_until_my_slot_us(&node->ra_sync);
+            
+            // Lookahead: enough time for packet?
+            if ((now_us + 2000) > slot_end_us) {
+                break;  // No time left
+            }
+            
+            uint8_t data_payload[MAX_PACKET_SIZE];
+            uint32_t dst_ip;
+            int data_len = tx_queue_dequeue(&node->tx_queue, &dst_ip,
+                                          data_payload, sizeof(data_payload));
+            
+            if (data_len <= 0) break;
+            
+            udp_transport_send(&node->transport, dst_ip, MSG_DATA,
+                             data_payload, data_len, ra_tdmas_get_current_time_us());
+        }
+        
         // Wait for round end
         uint32_t wait_us = ra_tdmas_time_until_my_slot_us(&node->ra_sync);
         usleep(wait_us);
@@ -306,16 +301,14 @@ void* tdma_node_receiver_thread(void *arg) {
         if (len > 0) {
             uint64_t rx_time_us = ra_tdmas_get_current_time_us();
             
-            // Process message
             tdma_node_process_message(node, &header, payload, len);
             
-            // Update RA-TDMAs+ delays
             ra_tdmas_on_packet_received(&node->ra_sync, header.src,
                                        header.tx_timestamp_us, rx_time_us);
             
-            // Update last seen
+            // ✅ NOVO! Reset age
             if (header.src > 0 && header.src <= MAX_NODES) {
-                node->last_seen_ms[header.src - 1] = current_time_ms();
+                node->node_age[header.src - 1] = 0;
             }
             
         } else if (len == 0) {
@@ -345,11 +338,71 @@ void tdma_node_process_message(tdma_node_t *node,
             node->topology_updates++;
             break;
             
-        case MSG_DATA:
-            data_streaming_receive(&node->streaming, 
-                                 (uint8_t*)payload, 
-                                 payload_len);
+        case MSG_DATA: {
+            // ============================================
+            // MULTI-HOP RELAY LOGIC
+            // ============================================
+            
+            if (payload_len < sizeof(stream_header_t)) {
+                fprintf(stderr, "[NODE %d] Invalid data packet size: %d bytes\n", 
+                       node->my_id, payload_len);
+                break;
+            }
+            
+            stream_header_t *shdr = (stream_header_t*)payload;
+            node_id_t final_destination = shdr->destination;
+            node_id_t source = shdr->source;
+            
+            if (final_destination == node->my_id) {
+                // ✅ É PARA MIM - Entregar à aplicação
+                printf("[NODE %d] 📥 Receiving data from Node %d (stream %u, seq %u/%u)\n",
+                       node->my_id, source, shdr->stream_id, 
+                       shdr->sequence_number + 1, shdr->total_chunks);
+                
+                data_streaming_receive(&node->streaming, 
+                                     (uint8_t*)payload, 
+                                     payload_len);
+            } else {
+                // 🔄 NÃO É PARA MIM - RELAY!
+                printf("[NODE %d] 🔄 Relaying: src=%d → dst=%d (stream %u, seq %u/%u)\n",
+                       node->my_id, source, final_destination,
+                       shdr->stream_id, shdr->sequence_number + 1, shdr->total_chunks);
+                
+                // Obter next hop da routing table
+                node_id_t next_hop = routing_manager_get_next_hop(
+                    &node->routing_mgr, final_destination);
+                
+                if (next_hop == 255) {
+                    printf("[NODE %d] ⚠️  No route to destination %d, dropping packet\n",
+                           node->my_id, final_destination);
+                    break;
+                }
+                
+                // Calcular IP do next hop
+                uint32_t next_hop_ip = 0xC0A80200 | next_hop;  // 192.168.2.X
+                
+                printf("[NODE %d] 📤 Forwarding to next_hop=%d (192.168.2.%d)\n",
+                       node->my_id, next_hop, next_hop);
+                
+                // Enfileira para transmissão no próximo slot TDMA
+                bool queued = tx_queue_enqueue(&node->tx_queue, next_hop_ip,
+                                              (uint8_t*)payload, payload_len);
+                
+                if (queued) {
+                    node->streaming.packets_relayed++;
+                    
+                    if ((shdr->sequence_number + 1) % 10 == 0) {
+                        printf("[NODE %d] 📊 Relayed %u packets total\n",
+                               node->my_id, node->streaming.packets_relayed);
+                    }
+                } else {
+                    printf("[NODE %d] ⚠️  TX queue full, packet dropped!\n", 
+                           node->my_id);
+                }
+            }
+            
             break;
+        }
             
         default:
             break;
@@ -393,33 +446,25 @@ void tdma_node_update_connectivity(tdma_node_t *node,
 }
 
 // ========================================
-// Timeout Detection
+// ✅ NOVO! Age-Based Timeout
 // ========================================
 
 void tdma_node_check_timeouts(tdma_node_t *node) {
-    uint64_t now = current_time_ms();
-    
     for (int i = 0; i < node->total_nodes; i++) {
         node_id_t neighbor = i + 1;
         if (neighbor == node->my_id) continue;
         
-        uint64_t last_seen = node->last_seen_ms[i];
-        uint64_t elapsed = now - last_seen;
+        node->node_age[i]++;
         
-        int my_idx = node->my_id - 1;
-        bool currently_connected = (node->topology.matrix[my_idx][i] != 0);
-        
-        if (elapsed > TIMEOUT_MS && currently_connected) {
-            printf("[NODE %d] ⚠️  TIMEOUT: Node %d (last seen %lu ms ago)\n",
-                   node->my_id, neighbor, elapsed);
+        if (node->node_age[i] > NODE_TIMEOUT_ROUNDS) {
+            int my_idx = node->my_id - 1;
             
-            tdma_node_update_connectivity(node, neighbor, false);
-        }
-        else if (elapsed <= TIMEOUT_MS && !currently_connected) {
-            printf("[NODE %d] ✅ RECOVERED: Node %d\n",
-                   node->my_id, neighbor);
-            
-            tdma_node_update_connectivity(node, neighbor, true);
+            if (node->topology.matrix[my_idx][i] == 1) {
+                printf("[NODE %d] ⏱️  TIMEOUT: Node %d (age=%d rounds)\n",
+                       node->my_id, neighbor, node->node_age[i]);
+                
+                tdma_node_update_connectivity(node, neighbor, false);
+            }
         }
     }
 }
@@ -484,6 +529,9 @@ void tdma_node_print_status(tdma_node_t *node) {
     printf("Heartbeats sent: %lu\n", node->heartbeats_sent);
     printf("Heartbeats recv: %lu\n", node->heartbeats_received);
     
+    // ✅ NOVO! TX Queue stats
+    tx_queue_print_stats(&node->tx_queue);
+    
     routing_manager_print_table(&node->routing_mgr);
     udp_transport_print_stats(&node->transport);
     routing_manager_print_performance(&node->routing_mgr);
@@ -495,6 +543,7 @@ void tdma_node_destroy(tdma_node_t *node) {
     ip_routing_manager_destroy(&node->ip_routing_mgr);
     udp_transport_destroy(&node->transport);
     routing_manager_destroy(&node->routing_mgr);
+    tx_queue_destroy(&node->tx_queue);  // ✅ NOVO!
     
     printf("[NODE %d] Destroyed\n", node->my_id);
 }

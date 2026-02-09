@@ -5,8 +5,8 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
-#include <unistd.h>   // ← ADICIONAR para usleep()
-#include <math.h>     // ← ADICIONAR para sin()
+#include <unistd.h>
+#include <math.h>
 
 // ========================================
 // Helper Functions
@@ -136,21 +136,21 @@ int data_streaming_send(data_streaming_t *stream,
         header->type = type;
         header->timestamp_us = get_current_time_us();
         
+        // ✅ CRÍTICO: Preencher source e destination!
+        header->source = stream->my_node_id;
+        header->destination = destination;
+        
         // Copy payload
         memcpy(packet + sizeof(stream_header_t), data + offset, this_chunk_size);
         
-        // ============================================
-        // CORRIGIDO: udp_transport_send()
-        // ============================================
         uint16_t packet_len = sizeof(stream_header_t) + this_chunk_size;
         
         int sent = udp_transport_send(stream->transport,
-                                     destination,           // dst_node
-                                     MSG_DATA,             // msg_type
-                                     packet,               // payload
-                                     packet_len,           // payload_len
-                                     header->timestamp_us); // tx_timestamp_us
-        // ============================================
+                                     destination,
+                                     MSG_DATA,
+                                     packet,
+                                     packet_len,
+                                     header->timestamp_us);
         
         if (sent > 0) {
             stream->tx_stats.chunks_sent++;
@@ -195,7 +195,7 @@ int data_streaming_send(data_streaming_t *stream,
 }
 
 // ========================================
-// Reception
+// Reception (CORRIGIDO)
 // ========================================
 
 int data_streaming_receive(data_streaming_t *stream,
@@ -217,8 +217,11 @@ int data_streaming_receive(data_streaming_t *stream,
         const char *type_str = header->type == STREAM_TYPE_VIDEO ? "VIDEO" :
                               header->type == STREAM_TYPE_AUDIO ? "AUDIO" : "DATA";
         
-        printf("[STREAMING] Receiving stream %u: %u chunks (%s)\n",
-               header->stream_id, header->total_chunks, type_str);
+        // ✅ MOSTRAR SOURCE
+        printf("[STREAMING] Receiving stream %u: %u chunks (%s) from node %d\n",
+               header->stream_id, header->total_chunks, type_str, header->source);
+        
+        stream->streams_received++;  // ✅ INCREMENTAR
     }
     
     if (header->stream_id != stream->rx_stats.stream_id) {
@@ -232,6 +235,7 @@ int data_streaming_receive(data_streaming_t *stream,
                buffer + sizeof(stream_header_t),
                header->chunk_size);
         stream->rx_bytes_received += header->chunk_size;
+        stream->total_bytes += header->chunk_size;  // ✅ ADICIONAR
     }
     
     stream->rx_stats.chunks_received++;
@@ -260,6 +264,8 @@ int data_streaming_receive(data_streaming_t *stream,
                duration_ms);
         printf("[STREAMING] Throughput: %.2f Mbps | Loss: %.2f%%\n",
                stream->rx_stats.throughput_mbps, loss_rate);
+        
+        stream->frames_received++;  // ✅ INCREMENTAR
         
         if (stream->rx_bytes_received >= 4) {
             if (header->type == STREAM_TYPE_VIDEO &&
@@ -306,8 +312,9 @@ void data_streaming_print_stats(data_streaming_t *stream) {
     printf("   Throughput:    %.2f Mbps\n", stream->tx_stats.throughput_mbps);
     
     printf("\n📥 RX Statistics:\n");
-    printf("   Stream ID:     %u\n", stream->rx_stats.stream_id);
-    printf("   Total Bytes:   %u\n", stream->rx_stats.total_bytes);
+    printf("   Streams:       %u\n", stream->streams_received);
+    printf("   Frames:        %u\n", stream->frames_received);
+    printf("   Total Bytes:   %lu\n", stream->total_bytes);
     printf("   Chunks Recv:   %u\n", stream->rx_stats.chunks_received);
     printf("   Chunks Lost:   %u\n", stream->rx_stats.chunks_lost);
     printf("   Duration:      %lu ms\n",
@@ -321,6 +328,12 @@ void data_streaming_print_stats(data_streaming_t *stream) {
         printf("   Loss Rate:     %.2f%%\n", loss_rate);
     }
     
+    // ✅ NOVO: Stats de relay
+    if (stream->packets_relayed > 0) {
+        printf("\n🔄 Relay Statistics:\n");
+        printf("   Packets:       %u\n", stream->packets_relayed);
+    }
+    
     printf("\n");
 }
 
@@ -328,4 +341,5 @@ void data_streaming_reset_stats(data_streaming_t *stream) {
     memset(&stream->tx_stats, 0, sizeof(stream_stats_t));
     memset(&stream->rx_stats, 0, sizeof(stream_stats_t));
     stream->rx_bytes_received = 0;
+    stream->packets_relayed = 0;
 }
